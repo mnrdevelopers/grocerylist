@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#2b6777" />
+  <title>Grocery PWA</title>
+  <link rel="manifest" href="/manifest.json">
+  <style>
+    /* Minimal modern, responsive CSS */
+    :root{--bg:#f7fbfc;--card:#ffffff;--accent:#2b6777;--muted:#6b7b7f}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;color:#073642;background:linear-gradient(180deg,var(--bg),#eef7f8);min-height:100vh;display:flex;flex-direction:column}
+    header{background:var(--accent);color:#fff;padding:1rem 1.25rem;display:flex;align-items:center;gap:.75rem}
+    header h1{font-size:1.1rem;margin:0}
+    .container{max-width:900px;margin:1rem auto;padding:1rem;width:95%}
+    .card{background:var(--card);border-radius:12px;box-shadow:0 6px 18px rgba(10,20,30,0.08);padding:1rem}
+    form{display:flex;gap:.5rem;flex-wrap:wrap}
+    input[type=text], input[type=number], select{flex:1;padding:.6rem .8rem;border:1px solid #e6eef0;border-radius:8px;font-size:0.95rem}
+    button{background:var(--accent);color:#fff;border:0;padding:.6rem .9rem;border-radius:8px;font-weight:600;cursor:pointer}
+    button.ghost{background:transparent;color:var(--accent);border:1px solid rgba(43,103,119,0.12)}
+    #items{list-style:none;padding:0;margin:1rem 0}
+    .item{display:flex;align-items:center;gap:.75rem;padding:.7rem;border-radius:8px;border:1px solid #f0f4f5;margin-bottom:.5rem}
+    .item .meta{flex:1}
+    .item .title{font-weight:600}
+    .muted{color:var(--muted);font-size:.85rem}
+    .controls{display:flex;gap:.5rem;align-items:center;margin-top:.5rem}
+    .small{font-size:.85rem;padding:.4rem .6rem}
+    @media (max-width:600px){form{flex-direction:column}header h1{font-size:1rem}}
+    .status{font-size:.85rem;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <header>
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18M5 6v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 6V4a3 3 0 0 1 6 0v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <h1>Grocery — PWA</h1>
+  </header>
+
+  <div class="container">
+    <div class="card">
+      <form id="addForm">
+        <input id="name" type="text" placeholder="Item name (eg. Tomatoes)" required />
+        <input id="quantity" type="number" min="0" placeholder="Qty" style="width:90px" />
+        <input id="unit" type="text" placeholder="Unit (kg/pcs)" style="width:110px" />
+        <select id="category" style="width:140px">
+          <option value="Produce">Produce</option>
+          <option value="Dairy">Dairy</option>
+          <option value="Bakery">Bakery</option>
+          <option value="Pantry">Pantry</option>
+          <option value="Frozen">Frozen</option>
+          <option value="Other">Other</option>
+        </select>
+        <button id="addBtn" type="submit">Add</button>
+      </form>
+
+      <div class="controls">
+        <input id="search" type="text" placeholder="Search items" class="small" style="flex:1" />
+        <select id="filterCategory" class="small">
+          <option value="">All</option>
+          <option>Produce</option><option>Dairy</option><option>Bakery</option><option>Pantry</option><option>Frozen</option><option>Other</option>
+        </select>
+        <button id="clearCompleted" class="ghost small">Clear Completed</button>
+      </div>
+
+      <ul id="items" aria-live="polite"></ul>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+        <div class="status" id="status">Status: <span id="onlineState">—</span></div>
+        <div style="display:flex;gap:.5rem">
+          <button id="syncBtn" class="ghost small">Sync now</button>
+          <button id="shareBtn" class="small">Share list</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:.75rem;text-align:center;color:var(--muted);font-size:.9rem">Tip: open the app on your phone, choose "Install" to add it to your home screen.</div>
+  </div>
+
+  <script>
+    // ====== CONFIGURE THIS BEFORE DEPLOY ======
+    const API_URL = 'https://script.google.com/macros/s/AKfycbxx0vlLEBWIzBL0x-icEHTWw5tYqu68AYyxze3kWAOQUhs5e9Fq3Gjh2dq1YHrSoPr0/exec'; // <- replace with your Apps Script web app URL
+    // ==========================================
+
+    // App state
+    let ITEMS = [];
+    const LIST_KEY_PREFIX = 'grocery_cache_';
+    const PENDING_KEY_PREFIX = 'grocery_pending_';
+
+    // Determine or generate listId
+    function getListId(){
+      const urlParams = new URLSearchParams(location.search);
+      let id = urlParams.get('list') || localStorage.getItem('grocery_listId');
+      if(!id){ id = 'list-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8); localStorage.setItem('grocery_listId', id); }
+      return id;
+    }
+    const LIST_ID = getListId();
+
+    // DOM
+    const itemsEl = document.getElementById('items');
+    const addForm = document.getElementById('addForm');
+    const nameInput = document.getElementById('name');
+    const qtyInput = document.getElementById('quantity');
+    const unitInput = document.getElementById('unit');
+    const catInput = document.getElementById('category');
+    const statusEl = document.getElementById('onlineState');
+    const syncBtn = document.getElementById('syncBtn');
+    const shareBtn = document.getElementById('shareBtn');
+    const searchInput = document.getElementById('search');
+    const filterCategory = document.getElementById('filterCategory');
+    const clearCompleted = document.getElementById('clearCompleted');
+
+    // Helpers
+    function saveCache(){ localStorage.setItem(LIST_KEY_PREFIX + LIST_ID, JSON.stringify(ITEMS)); }
+    function loadCache(){ const data = localStorage.getItem(LIST_KEY_PREFIX + LIST_ID); return data ? JSON.parse(data) : []; }
+    function pendingOps(){ return JSON.parse(localStorage.getItem(PENDING_KEY_PREFIX + LIST_ID) || '[]'); }
+    function setPending(ops){ localStorage.setItem(PENDING_KEY_PREFIX + LIST_ID, JSON.stringify(ops)); }
+
+    // Render UI
+    function renderItems(){
+      const q = searchInput.value.toLowerCase();
+      const cat = filterCategory.value;
+      itemsEl.innerHTML = '';
+      const list = ITEMS.filter(it => (!cat || it.category === cat) && (!q || (it.name && it.name.toLowerCase().includes(q))));
+      if(list.length === 0){ itemsEl.innerHTML = '<li class="muted">No items yet. Add some groceries ✨</li>'; return; }
+      list.sort((a,b)=> (a.checked===b.checked)? 0 : a.checked?1:-1);
+      list.forEach(it => {
+        const li = document.createElement('li'); li.className = 'item';
+        const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = !!it.checked; chk.addEventListener('change', ()=>toggleItem(it.id, chk.checked));
+        const meta = document.createElement('div'); meta.className='meta';
+        const title = document.createElement('div'); title.className='title'; title.textContent = it.name || '(no name)';
+        const sub = document.createElement('div'); sub.className='muted'; sub.textContent = (it.quantity? it.quantity + ' ' + (it.unit||'') + ' — ': '') + (it.category||'');
+        meta.appendChild(title); meta.appendChild(sub);
+        const editBtn = document.createElement('button'); editBtn.className='ghost small'; editBtn.textContent='Edit'; editBtn.addEventListener('click', ()=>editItem(it));
+        const delBtn = document.createElement('button'); delBtn.className='small'; delBtn.textContent='Delete'; delBtn.addEventListener('click', ()=>deleteItem(it.id));
+        li.appendChild(chk); li.appendChild(meta); li.appendChild(editBtn); li.appendChild(delBtn);
+        itemsEl.appendChild(li);
+      });
+    }
+
+    // CRUD operations (local-first, queue for server)
+    function queueOp(op){ const ops = pendingOps(); ops.push(op); setPending(ops); attemptSync(); }
+
+    async function attemptSync(){
+      if(!navigator.onLine) return updateStatus();
+      const ops = pendingOps(); if(!ops.length) return;
+      updateStatus('syncing...');
+      for(let i=0;i<ops.length;){
+        const op = ops[0];
+        try{
+          const res = await fetch(API_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(op)});
+          const json = await res.json();
+          if(json && json.status === 'ok'){
+            ops.shift(); setPending(ops);
+          } else {
+            console.warn('sync failed for op', op, json); break;
+          }
+        }catch(err){ console.warn('sync error', err); break; }
+      }
+      updateStatus();
+      fetchItems();
+    }
+
+    async function fetchItems(){
+      if(navigator.onLine){
+        try{
+          const r = await fetch(API_URL + '?action=getItems&listId=' + encodeURIComponent(LIST_ID));
+          const j = await r.json();
+          if(j && Array.isArray(j.items)){
+            ITEMS = j.items.map(i => ({...i, checked: i.checked===true || i.checked==='TRUE' || i.checked==='true'}));
+            saveCache(); renderItems(); return;
+          }
+        }catch(e){ console.warn('fetchItems network error', e); }
+      }
+      ITEMS = loadCache(); renderItems();
+    }
+
+    function addItemLocal(item){ ITEMS.push(item); saveCache(); renderItems(); }
+
+    addForm.addEventListener('submit', async e=>{
+      e.preventDefault();
+      const item = {
+        id: 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,6),
+        listId: LIST_ID,
+        name: nameInput.value.trim(),
+        quantity: qtyInput.value || '',
+        unit: unitInput.value || '',
+        category: catInput.value || 'Other',
+        checked: false,
+        notes: '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      addItemLocal(item);
+      queueOp({action:'add', item});
+      addForm.reset(); nameInput.focus();
+    });
+
+    async function toggleItem(id, checked){
+      const it = ITEMS.find(x=>x.id===id); if(!it) return;
+      it.checked = checked; it.updatedAt = new Date().toISOString(); saveCache(); renderItems();
+      queueOp({action:'update', id: id, updates: {checked: checked}});
+    }
+
+    function editItem(item){
+      const newName = prompt('Edit item name', item.name); if(newName===null) return; item.name = newName; item.updatedAt = new Date().toISOString(); saveCache(); renderItems();
+      queueOp({action:'update', id:item.id, updates:{name:item.name}});
+    }
+
+    function deleteItem(id){
+      if(!confirm('Delete this item?')) return; ITEMS = ITEMS.filter(i=>i.id!==id); saveCache(); renderItems();
+      queueOp({action:'delete', id});
+    }
+
+    clearCompleted.addEventListener('click', ()=>{
+      const completed = ITEMS.filter(i=>i.checked).map(i=>i.id);
+      if(!completed.length) return alert('No completed items');
+      completed.forEach(id=> queueOp({action:'delete', id}));
+      ITEMS = ITEMS.filter(i=>!i.checked); saveCache(); renderItems();
+    });
+
+    syncBtn.addEventListener('click', ()=>attemptSync());
+    shareBtn.addEventListener('click', ()=>{
+      const url = location.origin + location.pathname + '?list=' + LIST_ID;
+      navigator.clipboard?.writeText(url).then(()=>alert('Share link copied to clipboard'));
+    });
+
+    // search/filter
+    searchInput.addEventListener('input', ()=>renderItems());
+    filterCategory.addEventListener('change', ()=>renderItems());
+
+    // Connectivity status
+    function updateStatus(msg){
+      if(msg){ statusEl.textContent = msg; return; }
+      statusEl.textContent = navigator.onLine ? 'online' : 'offline';
+    }
+    window.addEventListener('online', ()=>{ updateStatus(); attemptSync(); });
+    window.addEventListener('offline', ()=>updateStatus());
+
+    // Register Service Worker
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.register('/sw.js').then(()=>console.log('SW registered')).catch(()=>console.warn('SW failed'))
+    }
+
+    // Initial load
+    updateStatus(); fetchItems();
+  </script>
+</body>
+</html>
