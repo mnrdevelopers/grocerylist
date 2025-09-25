@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grocery List Manager</title>
+    <meta name="theme-color" content="#4CAF50">
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-shopping-cart"></i> Grocery List</h1>
+            <div class="header-controls">
+                <button id="sync-btn" class="btn-icon" title="Sync with Google Sheets">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+                <button id="settings-btn" class="btn-icon" title="Settings">
+                    <i class="fas fa-cog"></i>
+                </button>
+            </div>
+        </header>
+
+        <div class="add-item-section">
+            <input type="text" id="item-input" placeholder="Add an item...">
+            <select id="category-select">
+                <option value="Produce">Produce</option>
+                <option value="Dairy">Dairy</option>
+                <option value="Meat">Meat</option>
+                <option value="Bakery">Bakery</option>
+                <option value="Frozen">Frozen</option>
+                <option value="Pantry">Pantry</option>
+                <option value="Other">Other</option>
+            </select>
+            <input type="number" id="quantity-input" placeholder="Qty" min="1" value="1">
+            <button id="add-btn" class="btn-primary">
+                <i class="fas fa-plus"></i> Add
+            </button>
+        </div>
+
+        <div class="filter-section">
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="active">To Buy</button>
+            <button class="filter-btn" data-filter="completed">Purchased</button>
+        </div>
+
+        <div id="grocery-list" class="grocery-list">
+            <!-- Items will be dynamically added here -->
+        </div>
+
+        <div class="stats-section">
+            <p>Total: <span id="total-count">0</span> items</p>
+            <p>To buy: <span id="active-count">0</span> items</p>
+        </div>
+
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Settings</h2>
+                    <span class="close">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <h3>Google Sheets Integration</h3>
+                    <p>Connect to your Google Sheet to sync your grocery list across devices.</p>
+                    <div class="form-group">
+                        <label for="sheet-id">Sheet ID:</label>
+                        <input type="text" id="sheet-id" placeholder="Enter your Google Sheet ID">
+                    </div>
+                    <button id="connect-btn" class="btn-primary">Connect to Sheet</button>
+                    <div id="connection-status" class="status-message"></div>
+                    
+                    <h3>Data Management</h3>
+                    <button id="export-btn" class="btn-secondary">Export Data</button>
+                    <button id="import-btn" class="btn-secondary">Import Data</button>
+                    <button id="clear-btn" class="btn-danger">Clear All Data</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sync Status Toast -->
+        <div id="sync-toast" class="toast">
+            <span id="sync-message"></span>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
